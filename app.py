@@ -1,16 +1,15 @@
 import streamlit as st
 import yfinance as yf
-import pandas as pd
 import plotly.graph_objects as go
+from analysis_engine import analyze_market
 
 st.set_page_config(
-    page_title="APEX Trading Intelligence",
-    page_icon="📊",
+    page_title="APEX Intelligence",
     layout="wide"
 )
 
 st.title("APEX | Trading Intelligence")
-st.caption("Multi-Market Analysis System - Version 1.0")
+st.caption("Multi-Market AI Analysis System")
 
 MARKETS = {
     "Bitcoin": "BTC-USD",
@@ -21,25 +20,23 @@ MARKETS = {
     "S&P 500": "SPY"
 }
 
-st.sidebar.title("APEX Control Center")
-
 asset = st.sidebar.selectbox(
     "Select Market",
     list(MARKETS.keys())
 )
 
 period = st.sidebar.selectbox(
-    "Analysis Period",
+    "Period",
     ["1mo", "3mo", "6mo", "1y", "2y"]
 )
 
-if st.button("Analyze Market"):
-    ticker = MARKETS[asset]
+if st.button("ANALYZE MARKET"):
 
-    with st.spinner("Analyzing market data..."):
+    with st.spinner("APEX analyzing..."):
+
         try:
             df = yf.download(
-                ticker,
+                MARKETS[asset],
                 period=period,
                 interval="1d",
                 auto_adjust=True,
@@ -47,113 +44,75 @@ if st.button("Analyze Market"):
             )
 
             if df.empty:
-                st.error("Market data unavailable.")
+                st.error("No market data available")
                 st.stop()
 
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            if hasattr(df.columns, "nlevels"):
+                if df.columns.nlevels > 1:
+                    df.columns = df.columns.get_level_values(0)
 
-            df["EMA20"] = df["Close"].ewm(
-                span=20, adjust=False
-            ).mean()
+            result = analyze_market(df)
 
-            df["EMA50"] = df["Close"].ewm(
-                span=50, adjust=False
-            ).mean()
-
-            delta = df["Close"].diff()
-            gain = delta.clip(lower=0)
-            loss = -delta.clip(upper=0)
-
-            avg_gain = gain.rolling(14).mean()
-            avg_loss = loss.rolling(14).mean()
-
-            rs = avg_gain / avg_loss.replace(0, float("nan"))
-            df["RSI"] = 100 - (100 / (1 + rs))
-
-            latest = df.iloc[-1]
-
-            st.subheader(f"{asset} Market Analysis")
+            st.header(asset)
 
             c1, c2, c3 = st.columns(3)
 
             c1.metric(
                 "Latest Price",
-                f"{latest['Close']:.4f}"
+                f"{float(df['Close'].iloc[-1]):.4f}"
             )
 
             c2.metric(
-                "EMA 20",
-                f"{latest['EMA20']:.4f}"
+                "Market Trend",
+                result["trend"]
             )
 
             c3.metric(
-                "RSI 14",
-                f"{latest['RSI']:.2f}"
-                if pd.notna(latest["RSI"])
+                "RSI",
+                f"{result['rsi']:.2f}"
+                if result["rsi"] is not None
                 else "N/A"
             )
 
-            if latest["EMA20"] > latest["EMA50"]:
-                trend = "BULLISH"
-            else:
-                trend = "BEARISH"
+            st.subheader("Breakout Detection")
+            st.write(result["breakout"])
 
-            st.subheader("Trend Analysis")
-            st.write(f"Market Trend: **{trend}**")
+            st.subheader("Volume Analysis")
+            st.write(result["volume_signal"])
+
+            st.subheader("Technical Signals")
+
+            if result["signals"]:
+                for signal in result["signals"]:
+                    st.write("- " + signal)
+            else:
+                st.write("No additional signals")
 
             fig = go.Figure()
 
             fig.add_trace(go.Scatter(
                 x=df.index,
                 y=df["Close"],
-                name="Price"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df.index,
-                y=df["EMA20"],
-                name="EMA 20"
-            ))
-
-            fig.add_trace(go.Scatter(
-                x=df.index,
-                y=df["EMA50"],
-                name="EMA 50"
+                name="Market Price"
             ))
 
             fig.update_layout(
                 template="plotly_dark",
-                height=550,
-                title=f"{asset} Price Analysis"
+                height=500
             )
 
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.subheader("APEX Intelligence")
-
-            if trend == "BULLISH":
-                st.info("Positive trend detected. Further confirmation required.")
-            else:
-                st.warning("Negative trend detected. Further confirmation required.")
+            st.plotly_chart(
+                fig,
+                use_container_width=True
+            )
 
             st.caption(
-                "Educational analysis only. "
-                "Not a trading recommendation."
+                "Research prototype. "
+                "Signals are experimental, not trade recommendations."
             )
 
         except Exception as e:
-            st.error(f"Analysis error: {e}")
+            st.error(str(e))
 
 else:
-    st.info("Select a market and press Analyze Market.")
-
-    st.subheader("System Modules")
-
-    col1, col2, col3 = st.columns(3)
-
-    col1.write("Technical Analysis")
-    col2.write("Market Intelligence")
-    col3.write("Strategy Research")
-
-    st.caption("APEX V1.0 | Development Mode")
+    st.info("Select a market and start analysis.")
